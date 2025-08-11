@@ -31,66 +31,66 @@ export const DataUpload = () => {
     handleFiles(files);
   };
 
-  const handleFiles = async (files: File[]) => {
-    for (const file of files) {
-      toast({
-        title: "File uploaded",
-        description: `${file.name} ready for analysis`,
-      });
-
-      try {
-        if (
-          file.type.includes('sheet') ||
-          file.name.toLowerCase().endsWith('.xlsx') ||
-          file.name.toLowerCase().endsWith('.xls')
-        ) {
-          const data = await readExcel(file);
-          const cleaned = cleanData(data);
-          console.log('Cleaned Excel data:', cleaned);
-          setCleanedData(cleaned);
-        } else if (
-          file.type === 'text/csv' ||
-          file.name.toLowerCase().endsWith('.csv')
-        ) {
-          const data = await readCSV(file);
-          const cleaned = cleanData(data);
-          console.log('Cleaned CSV data:', cleaned);
-          setCleanedData(cleaned);
-        } else if (file.name.toLowerCase().endsWith('.json')) {
-          const data = await readJSON(file);
-          const cleaned = cleanData(data);
-          console.log('Cleaned JSON data:', cleaned);
-          setCleanedData(cleaned);
-        } else {
-          toast({
-            title: 'Unsupported file type',
-            description: `${file.name} is not supported for cleaning.`,
-          });
-        }
-      } catch (error) {
+const handleFiles = async (files: File[]) => {
+  for (const file of files) {
+    try {
+      let data;
+      if (
+        file.type.includes('sheet') ||
+        file.name.toLowerCase().endsWith('.xlsx') ||
+        file.name.toLowerCase().endsWith('.xls')
+      ) {
+        data = await readExcel(file);
+      } else if (
+        file.type === 'text/csv' ||
+        file.name.toLowerCase().endsWith('.csv')
+      ) {
+        data = await readCSV(file);
+      } else if (file.name.toLowerCase().endsWith('.json')) {
+        data = await readJSON(file);
+      } else {
         toast({
-          title: 'Error reading file',
-          description: `${file.name} failed to process.`,
-          variant: 'destructive',
+          title: 'Unsupported file type',
+          description: `${file.name} is not supported for cleaning.`,
         });
-        console.error(error);
+        continue; // skip unsupported files
       }
+
+      const cleaned = cleanData(data);
+      setCleanedData(cleaned);
+
+      toast({
+        title: 'File uploaded & cleaned',
+        description: `Your file ${file.name} has been cleaned and is ready to download.`,
+        duration: 5000,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error reading file',
+        description: `${file.name} failed to process.`,
+        variant: 'destructive',
+      });
+      console.error(error);
     }
-  };
+  }
+};
+
+
 
   // Create downloadable CSV URL when cleanedData changes
-  useEffect(() => {
-    if (cleanedData.length === 0) {
-      setDownloadUrl(null);
-      return;
-    }
-    const csv = Papa.unparse(cleanedData);
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    setDownloadUrl(url);
+useEffect(() => {
+  if (cleanedData.length === 0) {
+    setDownloadUrl(null);
+    return;
+  }
+  const csv = Papa.unparse(cleanedData);
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  setDownloadUrl(url);
 
-    return () => URL.revokeObjectURL(url);
-  }, [cleanedData]);
+  return () => URL.revokeObjectURL(url);
+}, [cleanedData]);
+
 
   // Helpers
   function readExcel(file: File): Promise<any[]> {
