@@ -1,12 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Upload, FileText, Image, BarChart3 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
+import * as XLSX from 'xlsx';
+import Papa from 'papaparse';
 
 export const DataUpload = () => {
   const { toast } = useToast();
   const [dragActive, setDragActive] = useState(false);
+  const [cleanedData, setCleanedData] = useState<any[]>([]);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -22,19 +26,131 @@ export const DataUpload = () => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-    
+
     const files = Array.from(e.dataTransfer.files);
     handleFiles(files);
   };
 
-  const handleFiles = (files: File[]) => {
-    files.forEach(file => {
+  const handleFiles = async (files: File[]) => {
+    for (const file of files) {
       toast({
         title: "File uploaded",
         description: `${file.name} ready for analysis`,
       });
-    });
+
+      try {
+        if (
+          file.type.includes('sheet') ||
+          file.name.toLowerCase().endsWith('.xlsx') ||
+          file.name.toLowerCase().endsWith('.xls')
+        ) {
+          const data = await readExcel(file);
+          const cleaned = cleanData(data);
+          console.log('Cleaned Excel data:', cleaned);
+          setCleanedData(cleaned);
+        } else if (
+          file.type === 'text/csv' ||
+          file.name.toLowerCase().endsWith('.csv')
+        ) {
+          const data = await readCSV(file);
+          const cleaned = cleanData(data);
+          console.log('Cleaned CSV data:', cleaned);
+          setCleanedData(cleaned);
+        } else if (file.name.toLowerCase().endsWith('.json')) {
+          const data = await readJSON(file);
+          const cleaned = cleanData(data);
+          console.log('Cleaned JSON data:', cleaned);
+          setCleanedData(cleaned);
+        } else {
+          toast({
+            title: 'Unsupported file type',
+            description: `${file.name} is not supported for cleaning.`,
+          });
+        }
+      } catch (error) {
+        toast({
+          title: 'Error reading file',
+          description: `${file.name} failed to process.`,
+          variant: 'destructive',
+        });
+        console.error(error);
+      }
+    }
   };
+
+  // Create downloadable CSV URL when cleanedData changes
+  useEffect(() => {
+    if (cleanedData.length === 0) {
+      setDownloadUrl(null);
+      return;
+    }
+    const csv = Papa.unparse(cleanedData);
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    setDownloadUrl(url);
+
+    return () => URL.revokeObjectURL(url);
+  }, [cleanedData]);
+
+  // Helpers
+  function readExcel(file: File): Promise<any[]> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheet = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheet];
+        const json = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+        resolve(json);
+      };
+      reader.onerror = e => reject(e);
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  function readCSV(file: File): Promise<any[]> {
+    return new Promise((resolve, reject) => {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: results => resolve(results.data),
+        error: err => reject(err),
+      });
+    });
+  }
+
+  function readJSON(file: File): Promise<any[]> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const json = JSON.parse(e.target?.result as string);
+          if (Array.isArray(json)) resolve(json);
+          else resolve([json]);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.onerror = e => reject(e);
+      reader.readAsText(file);
+    });
+  }
+
+  function cleanData(data: any[]) {
+    return data
+      .filter(row => Object.values(row).some(v => v !== '' && v !== null))
+      .map(row => {
+        const cleanedRow: any = {};
+        Object.entries(row).forEach(([k, v]) => {
+          const key = k.trim().toLowerCase();
+          let val = v;
+          if (typeof val === 'string') val = val.trim();
+          cleanedRow[key] = val;
+        });
+        return cleanedRow;
+      });
+  }
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -44,10 +160,10 @@ export const DataUpload = () => {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      {/* Data Upload */}
+      {/* Dataset Upload Card */}
       <Card className="relative overflow-hidden bg-glass backdrop-blur-glass border-glass">
         <div className="absolute inset-0 bg-gradient-accent opacity-50" />
-        <div 
+        <div
           className={`relative p-8 border-2 border-dashed rounded-lg transition-all duration-300 ${
             dragActive ? 'border-ai-primary bg-ai-primary/10' : 'border-muted-foreground/30'
           }`}
@@ -75,8 +191,8 @@ export const DataUpload = () => {
                 accept=".csv,.xlsx,.xls,.json"
                 onChange={handleFileInput}
               />
-              <Button 
-                variant="secondary" 
+              <Button
+                variant="secondary"
                 onClick={() => document.getElementById('data-upload')?.click()}
                 className="w-full"
               >
@@ -91,10 +207,10 @@ export const DataUpload = () => {
         </div>
       </Card>
 
-      {/* Image Upload */}
+      {/* Image Upload Card */}
       <Card className="relative overflow-hidden bg-glass backdrop-blur-glass border-glass">
         <div className="absolute inset-0 bg-gradient-accent opacity-50" />
-        <div 
+        <div
           className={`relative p-8 border-2 border-dashed rounded-lg transition-all duration-300 ${
             dragActive ? 'border-ai-secondary bg-ai-secondary/10' : 'border-muted-foreground/30'
           }`}
@@ -122,8 +238,8 @@ export const DataUpload = () => {
                 accept="image/*"
                 onChange={handleFileInput}
               />
-              <Button 
-                variant="secondary" 
+              <Button
+                variant="secondary"
                 onClick={() => document.getElementById('image-upload')?.click()}
                 className="w-full"
               >
@@ -137,6 +253,17 @@ export const DataUpload = () => {
           </div>
         </div>
       </Card>
+
+      {/* Download cleaned CSV button */}
+      {downloadUrl && (
+        <a
+          href={downloadUrl}
+          download="cleaned_data.csv"
+          className="fixed bottom-6 right-6 px-5 py-3 bg-ai-primary hover:bg-ai-primary-dark text-white rounded-lg shadow-lg"
+        >
+          Download Cleaned CSV
+        </a>
+      )}
     </div>
   );
 };
